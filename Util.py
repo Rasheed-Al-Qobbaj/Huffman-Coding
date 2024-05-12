@@ -94,22 +94,34 @@ def write_encoded_file(input_file_path, output_file_path, encoding_table, root):
     output_file_size = 0
     header_size = 0
 
-    def write_node(node, output_file):
+    def write_node(node, output_file, bit_buffer, buffer_length):
         nonlocal output_file_size, header_size
+        if buffer_length >= 8:
+            output_file.write(int(bit_buffer[:8], 2).to_bytes(1, 'big'))
+            bit_buffer = bit_buffer[8:]
+            buffer_length -= 8
+
         if node.is_leaf():
-            output_file.write((1).to_bytes(1, 'big'))
-            output_file.write(ord(node.byte).to_bytes(1, 'big'))
-            output_file_size += 2
-            header_size += 2
+            bit_buffer += '1' + format(ord(node.byte), '08b')
+            buffer_length += 9
         else:
-            output_file.write((0).to_bytes(1, 'big'))
-            output_file_size += 1
-            header_size += 1
-            write_node(node.left, output_file)
-            write_node(node.right, output_file)
+            bit_buffer += '0'
+            buffer_length += 1
+            bit_buffer, buffer_length = write_node(node.left, output_file, bit_buffer, buffer_length)
+            bit_buffer, buffer_length = write_node(node.right, output_file, bit_buffer, buffer_length)
+
+        return bit_buffer, buffer_length
 
     with open(input_file_path, 'rb') as input_file, open(output_file_path, 'wb') as output_file:
-        write_node(root, output_file)
+        bit_buffer, buffer_length = write_node(root, output_file, '', 0)
+        while buffer_length >= 8:
+            output_file.write(int(bit_buffer[:8], 2).to_bytes(1, 'big'))
+            bit_buffer = bit_buffer[8:]
+            buffer_length -= 8
+        if buffer_length > 0:
+            output_file.write(int(bit_buffer, 2).to_bytes(1, 'big'))
+            output_file_size += 1
+            header_size += 1
 
         buffer = ''
         byte = input_file.read(1)
