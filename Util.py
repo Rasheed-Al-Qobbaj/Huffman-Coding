@@ -1,145 +1,163 @@
-# Huffman Coding
+# Rasheed Alqobbaj
 
-# Custom heap (priority queue) implementation
-class Heap:
-    def __init__(self):
-        self.heap = []
-
-    def insert(self, node):
-        self.heap.append(node)
-        self.heapify_up(len(self.heap)-1)
-
-    def heapify_up(self, index):
-        parent = (index-1)//2
-        if parent >= 0 and self.heap[parent].freq > self.heap[index].freq:
-            self.heap[parent], self.heap[index] = self.heap[index], self.heap[parent]
-            self.heapify_up(parent)
-
-    def remove(self):
-        if len(self.heap) == 0:
-            return None
-        self.heap[0], self.heap[-1] = self.heap[-1], self.heap[0]
-        node = self.heap.pop()
-        self.heapify_down(0)
-        return node
-
-    def heapify_down(self, index):
-        left = 2*index + 1
-        right = 2*index + 2
-        smallest = index
-        if left < len(self.heap) and self.heap[left].freq < self.heap[smallest].freq:
-            smallest = left
-        if right < len(self.heap) and self.heap[right].freq < self.heap[smallest].freq:
-            smallest = right
-        if smallest != index:
-            self.heap[smallest], self.heap[index] = self.heap[index], self.heap[smallest]
-            self.heapify_down(smallest)
-
-    def size(self):
-        return len(self.heap)
-
-    def is_empty(self):
-        return len(self.heap) == 0
+# Function to read bytes and their frequencies from a file
+def count_byte_frequencies(file_path):
+    frequency_dict = {}
+    with open(file_path, 'rb') as file:
+        byte = file.read(1)
+        while byte:
+            if byte in frequency_dict:
+                frequency_dict[byte] += 1
+            else:
+                frequency_dict[byte] = 1
+            byte = file.read(1)
+    return frequency_dict
 
 
-# Binary tree node
+# Node class to store byte and frequency information
 class Node:
-    def __init__(self, char, freq):
-        self.char = char
-        self.freq = freq
-        self.left = None
-        self.right = None
+    def __init__(self, byte, frequency, left=None, right=None):
+        self.byte = byte
+        self.frequency = frequency
+        self.left = left
+        self.right = right
 
     def __lt__(self, other):
-        return self.freq < other.freq
+        return self.frequency < other.frequency
 
-    def __eq__(self, other):
-        return self.freq == other.freq
-
-    def __repr__(self):
-        return f'{self.char}: {self.freq}'
+    def is_leaf(self):
+        return self.left is None and self.right is None
 
 
-# Huffman coding
-def huffman_encoding(data):
-    if len(data) == 0:
-        return '', None
+# Priority queue class to store nodes
+class PriorityQueue:
+    def __init__(self):
+        self._queue = []
 
-    # Calculate frequency of each character
-    freq = {}
-    for char in data:
-        if char not in freq:
-            freq[char] = 0
-        freq[char] += 1
+    def push(self, item):
+        self._queue.append(item)
+        self._sort()
 
-    # Create heap of nodes
-    heap = Heap()
-    for char, freq in freq.items():
-        heap.insert(Node(char, freq))
+    def pop(self):
+        return self._queue.pop(0)
 
-    # Build Huffman tree
-    while heap.size() > 1:
-        left = heap.remove()
-        right = heap.remove()
-        new_node = Node(None, left.freq + right.freq)
-        new_node.left = left
-        new_node.right = right
-        heap.insert(new_node)
+    def __len__(self):
+        return len(self._queue)
 
-    root = heap.remove()
-
-    # Generate encoding for each character
-    encoding = {}
-    def generate_encoding(node, code):
-        if node is None:
-            return
-        if node.char is not None:
-            encoding[node.char] = code
-            return
-        generate_encoding(node.left, code + '0')
-        generate_encoding(node.right, code + '1')
-
-    generate_encoding(root, '')
-
-    # Encode data
-    encoded_data = ''.join([encoding[char] for char in data])
-
-    return encoded_data, root
+    def _sort(self):
+        for i in range(1, len(self._queue)):
+            key = self._queue[i]
+            j = i - 1
+            while j >= 0 and key.frequency < self._queue[j].frequency:
+                self._queue[j + 1] = self._queue[j]
+                j -= 1
+            self._queue[j + 1] = key
 
 
-# Display Huffman tree
-def display_tree(node, level=0):
-    if node is None:
-        return
-    display_tree(node.right, level+1)
-    print('   '*level + str(node))
-    display_tree(node.left, level+1)
+# Function to create a huffman tree from a dictionary of byte frequencies
+def create_huffman_tree(frequency_dict):
+    queue = PriorityQueue()
+
+    for byte, frequency in frequency_dict.items():
+        queue.push(Node(byte, frequency))
+
+    while len(queue) > 1:
+        node1 = queue.pop()
+        node2 = queue.pop()
+
+        merged = Node(None, node1.frequency + node2.frequency, node1, node2)
+
+        queue.push(merged)
+
+    return queue.pop()  # Return root node
 
 
-# Display Table
-def display_table(data, encoding):
-    print('Character\tFrequency\tHuffman Code')
-    for char, freq in data.items():
-        print(f'{char}\t\t{freq}\t\t{encoding[char]}')
+# Function to create a table of byte encodings from a huffman tree
+def create_encoding_table(root):
+    encoding_table = {}
+
+    def traverse(node, code):
+        if node is not None:
+            if node.byte is not None:
+                encoding_table[node.byte] = code
+            else:
+                traverse(node.left, code + '0')
+                traverse(node.right, code + '1')
+
+    traverse(root, '')
+    return encoding_table
+
+
+# Function to write a file with the encoding table and the encoded data
+def write_encoded_file(input_file_path, output_file_path, encoding_table, root):
+    input_file_size = 0
+    output_file_size = 0
+    header_size = 0
+
+    def write_node(node, output_file):
+        nonlocal output_file_size, header_size
+        if node.is_leaf():
+            output_file.write((1).to_bytes(1, 'big'))
+            output_file.write(ord(node.byte).to_bytes(1, 'big'))
+            output_file_size += 2
+            header_size += 2
+        else:
+            output_file.write((0).to_bytes(1, 'big'))
+            output_file_size += 1
+            header_size += 1
+            write_node(node.left, output_file)
+            write_node(node.right, output_file)
+
+    with open(input_file_path, 'rb') as input_file, open(output_file_path, 'wb') as output_file:
+        write_node(root, output_file)
+
+        buffer = ''
+        byte = input_file.read(1)
+        while byte:
+            input_file_size += 1
+            buffer += encoding_table[byte]
+            while len(buffer) >= 8:
+                output_file.write(int(buffer[:8], 2).to_bytes(1, 'big'))
+                buffer = buffer[8:]
+                output_file_size += 1
+            byte = input_file.read(1)
+
+        # Write the remaining bits in the buffer, if any
+        if buffer:
+            output_file.write(int(buffer, 2).to_bytes(1, 'big'))
+            output_file_size += 1
+
+    # Calculate and print the compression statistics
+    print(f'Original file size: {input_file_size} bytes ({input_file_size * 8} bits)')
+    print(f'Compressed file size: {output_file_size} bytes ({output_file_size * 8} bits)')
+    print(f'Compression ratio: {output_file_size / input_file_size:.2f}')
+    print(f'Header size: {header_size} bytes ({header_size * 8} bits)')
+
+    return header_size, output_file_size
+
 
 
 def main():
-    data = 'The bird is the word'
-    encoded_data, tree = huffman_encoding(data)
+    file_path = 'test.txt'
+    frequency_dict = count_byte_frequencies(file_path)
+    print(frequency_dict)
+    p = PriorityQueue()
+    for byte, frequency in frequency_dict.items():
+        p.push(Node(byte, frequency))
 
-    print('Original data:', data)
-    print('Encoded data:', encoded_data)
-    print('Huffman tree:')
-    display_tree(tree)
+    # print the queue
+    while len(p) > 0:
+        node = p.pop()
+        print(node.byte, node.frequency)
 
-    freq = {}
-    for char in data:
-        if char not in freq:
-            freq[char] = 0
-        freq[char] += 1
+    root = create_huffman_tree(frequency_dict)
+    encoding_table = create_encoding_table(root)
+    print(encoding_table)
 
-    print('\nTable:')
-    display_table(freq, {char: code for char, code in tree})
+    input_file_path = 'test.txt'
+    output_file_path = 'test.huff'
+    write_encoded_file(input_file_path, output_file_path, encoding_table, root)
+
 
 
 if __name__ == '__main__':
