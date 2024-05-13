@@ -2,6 +2,8 @@
 
 This project is an implementation of Huffman Coding, a popular data compression algorithm, in Python. It includes a web interface built with Flask.
 
+![Screenshot](img.png)
+
 ## Features
 
 - Compress and decompress files using Huffman Coding
