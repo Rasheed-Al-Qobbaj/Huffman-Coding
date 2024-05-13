@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Compress File</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Compress File</h1>
+        <form action="/compress" method="post" enctype="multipart/form-data">
+            <input type="file" name="file">
+            <input type="submit" value="Compress">
+        </form>
+        <table>
+            <thead>
+                <tr>
+                    <th>Character</th>
+                    <th>Frequency</th>
+                    <th>Huffman Code</th>
+                    <th>Code Length</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for char, code in huffman_table.items() %}
+                <tr>
+                    <td>{{ char.decode('utf-8') }}</td>
+                    <td>{{ frequency_dict[char] }}</td>
+                    <td>{{ code }}</td>
+                    <td>{{ code|length }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="progress">
+            <div class="progress-bar" style="width: {{ compression_rate }}%">
+                <span class="progress-text">{{ compression_rate|round(2) }}%</span>
+            </div>
+        </div>
+        <p>Original size: {{ original_size }} bytes</p>
+        <p>Compressed size: {{ compressed_size }} bytes</p>
+        <p>Header size: {{ header_size }} bytes</p>
+        <div class="header-box">
+            <h2>Header</h2>
+            <p>{{ header }}</p>
+        </div>
+        <div class="buttons">
+        <button onclick="location.href='/'">Go Back</button>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Decompress File</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Decompress File</h1>
+        <form action="/decompress" method="post" enctype="multipart/form-data">
+            <input type="file" name="file">
+            <input type="submit" value="Decompress">
+        </form>
+        <p>Original size: {{ original_size }} bytes</p>
+        <p>Decompressed size: {{ decompressed_size }} bytes</p>
+        <div class="header-box">
+            <h2>Header</h2>
+            <p>{{ header }}</p>
+        </div>
+        <div class="buttons">
+            <button onclick="location.href='/'">Go Back</button>
+        </div>
+    </div>
+</body>
+</html>

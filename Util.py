@@ -87,67 +87,134 @@ def create_encoding_table(root):
     traverse(root, '')
     return encoding_table
 
+class BitWriter:
+    def __init__(self, file):
+        self.file = file  # The file we are writing to
+        self.buffer = ''  # The buffer where we store bits until we have a full byte
+        self.nbits = 0  # The number of bits in the buffer
 
-# Function to write a file with the encoding table and the encoded data
-def write_encoded_file(input_file_path, output_file_path, encoding_table, root):
-    input_file_size = 0
-    output_file_size = 0
-    header_size = 0
+    def write_bit(self, bit):
+        # Add the bit to the buffer
+        self.buffer += bit
+        self.nbits += 1
 
-    def write_node(node, output_file, bit_buffer, buffer_length):
-        nonlocal output_file_size, header_size
-        if buffer_length >= 8:
-            output_file.write(int(bit_buffer[:8], 2).to_bytes(1, 'big'))
-            bit_buffer = bit_buffer[8:]
-            buffer_length -= 8
+        # If we have a full byte, write it to the file
+        if self.nbits == 8:
+            self.flush()
 
-        if node.is_leaf():
-            bit_buffer += '1' + format(ord(node.byte), '08b')
-            buffer_length += 9
-        else:
-            bit_buffer += '0'
-            buffer_length += 1
-            bit_buffer, buffer_length = write_node(node.left, output_file, bit_buffer, buffer_length)
-            bit_buffer, buffer_length = write_node(node.right, output_file, bit_buffer, buffer_length)
+    def flush(self):
+        # If the buffer is not empty, pad it with zeros and write it to the file
+        if self.nbits > 0:
+            self.buffer += '0' * (8 - self.nbits)
+            self.file.write(bytes([int(self.buffer, 2)]))
+            print(f'Write byte: {self.buffer}')  # Print the byte (for debugging purposes)
+            self.buffer = ''
+            self.nbits = 0
 
-        return bit_buffer, buffer_length
+def write_tree(node, bit_writer):
+    header = ''
+    if node.is_leaf():
+        bit_writer.write_bit('1')
+        header += '1'
+        # Convert the byte to bits and write each bit
+        for bit in format(ord(node.byte), '08b'):
+            bit_writer.write_bit(bit)
+            header += bit
+    else:
+        bit_writer.write_bit('0')
+        header += '0'
+        left_header, _ = write_tree(node.left, bit_writer)
+        right_header, _ = write_tree(node.right, bit_writer)
+        header += left_header + right_header
+    return header, len(header)
 
-    with open(input_file_path, 'rb') as input_file, open(output_file_path, 'wb') as output_file:
-        bit_buffer, buffer_length = write_node(root, output_file, '', 0)
-        while buffer_length >= 8:
-            output_file.write(int(bit_buffer[:8], 2).to_bytes(1, 'big'))
-            bit_buffer = bit_buffer[8:]
-            buffer_length -= 8
-        if buffer_length > 0:
-            output_file.write(int(bit_buffer, 2).to_bytes(1, 'big'))
-            output_file_size += 1
-            header_size += 1
-
-        buffer = ''
-        byte = input_file.read(1)
+def write_encoded_data(encoding_table, original_file_path, bit_writer):
+    with open(original_file_path, 'rb') as original_file:
+        byte = original_file.read(1)
         while byte:
-            input_file_size += 1
-            buffer += encoding_table[byte]
-            while len(buffer) >= 8:
-                output_file.write(int(buffer[:8], 2).to_bytes(1, 'big'))
-                buffer = buffer[8:]
-                output_file_size += 1
-            byte = input_file.read(1)
+            for bit in encoding_table[byte]:
+                bit_writer.write_bit(bit)
+            byte = original_file.read(1)
 
-        # Write the remaining bits in the buffer, if any
-        if buffer:
-            output_file.write(int(buffer, 2).to_bytes(1, 'big'))
-            output_file_size += 1
+def encode(original_file_path, output_file_path):
+    frequency_dict = count_byte_frequencies(original_file_path)
+    root = create_huffman_tree(frequency_dict)
+    encoding_table = create_encoding_table(root)
 
-    # Calculate and print the compression statistics
-    print(f'Original file size: {input_file_size} bytes ({input_file_size * 8} bits)')
-    print(f'Compressed file size: {output_file_size} bytes ({output_file_size * 8} bits)')
-    print(f'Compression ratio: {output_file_size / input_file_size:.2f}')
-    print(f'Header size: {header_size} bytes ({header_size * 8} bits)')
+    with open(output_file_path, 'wb') as output_file:
+        bit_writer = BitWriter(output_file)
+        header, header_size = write_tree(root, bit_writer)  # Get the header size directly from the write_tree function
+        write_encoded_data(encoding_table, original_file_path, bit_writer)
+        bit_writer.flush()  # Make sure to flush the last byte
 
-    return header_size, output_file_size
+    original_file_size = sum(frequency for frequency in frequency_dict.values())
+    compressed_file_size = len(open(output_file_path, 'rb').read())
+    compression_rate = (original_file_size - compressed_file_size) / original_file_size
 
+    return original_file_size, compressed_file_size, header_size, compression_rate, header
 
+class BitReader:
+    def __init__(self, file):
+        self.file = file
+        self.buffer = ''
+        self.nbits = 0
+
+    def read_bit(self):
+        if self.nbits == 0:
+            self.buffer = self.file.read(1)
+            if len(self.buffer) == 0:
+                return None
+            self.buffer = format(ord(self.buffer), '08b')
+            self.nbits = 8
+            # If this is the last byte in the file, only read the number of bits that were actually written
+            if len(self.file.peek(1)) == 0:
+                self.nbits = self.buffer.count('1')
+        bit = self.buffer[0]
+        self.buffer = self.buffer[1:]
+        self.nbits -= 1
+        print(f'Read bit: {bit}')  # Print the bit
+        return bit
+
+def read_tree(bit_reader):
+    bit = bit_reader.read_bit()
+    header = bit
+    if bit == '1':
+        byte = ''
+        for _ in range(8):
+            byte += bit_reader.read_bit()
+        header += byte
+        return Node(chr(int(byte, 2)), None), header
+    else:
+        left, left_header = read_tree(bit_reader)
+        right, right_header = read_tree(bit_reader)
+        return Node(None, None, left, right), header + left_header + right_header
+
+def read_encoded_data(root, bit_reader, output_file_path):
+    with open(output_file_path, 'wb') as output_file:
+        bit = bit_reader.read_bit()
+        while bit is not None:
+            node = root
+            while not node.is_leaf():
+                if bit == '0':
+                    node = node.left
+                else:
+                    node = node.right
+                bit = bit_reader.read_bit()
+            output_file.write(node.byte.encode())
+
+def decode(input_file_path, output_file_path):
+    with open(input_file_path, 'rb') as input_file:
+        bit_reader = BitReader(input_file)
+        root, header = read_tree(bit_reader)
+        read_encoded_data(root, bit_reader, output_file_path)
+
+    with open(input_file_path, 'rb') as f:
+        original_size = len(f.read())
+
+    with open(output_file_path, 'rb') as f:
+        decompressed_size = len(f.read())
+
+    return original_size, decompressed_size, header
 
 def main():
     file_path = 'test.txt'
@@ -166,9 +233,17 @@ def main():
     encoding_table = create_encoding_table(root)
     print(encoding_table)
 
-    input_file_path = 'test.txt'
+    original_file_path = 'test.txt'
     output_file_path = 'test.huff'
-    write_encoded_file(input_file_path, output_file_path, encoding_table, root)
+    original_file_size, compressed_file_size, header_size, compression_rate, header = encode(original_file_path, output_file_path)
+    print(f'Original file size: {original_file_size} bytes ({original_file_size*8} bits)')
+    print(f'Compressed file size: {compressed_file_size} bytes ({compressed_file_size*8} bits)')
+    print(f'Header size: {round(header_size/8)} bytes ({header_size} bits)')
+    print(f'Compression rate: {compression_rate*100:.2f}%')
+
+    decode('test.huff', 'test_decoded.txt')
+
+
 
 
 
